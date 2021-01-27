@@ -1,11 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using System.Runtime.Serialization;
 
-namespace GraZaDuzoZaMalo.Model
-{
+namespace GraZaDuzoZaMalo.Model {
     /// <summary>
     /// Klasa odpowiedzialna za logikę gry w "Za dużo za mało". Dostarcza API gry.
     /// </summary>
@@ -45,8 +42,9 @@ namespace GraZaDuzoZaMalo.Model
     /// Pojedynczy Ruch
     /// </para>
     /// </remarks>
-    public class Gra
-    {
+    [Serializable]
+    [DataContract]
+    public class Gra {
         /// <summary>
         /// Górne ograniczenie losowanej liczby, która ma zostać odgadnięta.
         /// </summary>
@@ -63,21 +61,26 @@ namespace GraZaDuzoZaMalo.Model
         /// </value>
         public int MinLiczbaDoOdgadniecia { get; } = 1;
 
-
+        [DataMember]
         readonly private int liczbaDoOdgadniecia;
 
 
         /// <summary>
         /// Typ wyliczeniowy opisujący możliwe statusy gry.
         /// </summary>
-        public enum Status
-        {
+        [DataContract]
+        public enum Status {
             /// <summary>Status gry ustawiany w momencie utworzenia obiektu gry. Zmiana tego statusu mozliwa albo gdy liczba zostanie odgadnieta, albo jawnie przerwana przez gracza.</summary>
+            [EnumMember]
             WTrakcie,
             /// <summary>Status gry ustawiany w momencie odgadnięcia poszukiwanej liczby.</summary>
+            [EnumMember]
             Zakonczona,
             /// <summary>Status gry ustawiany w momencie jawnego przerwania gry przez gracza.</summary>
-            Poddana
+            [EnumMember]
+            Poddana,
+            [EnumMember]
+            Zawieszona
         };
 
         /// <summary>
@@ -88,17 +91,17 @@ namespace GraZaDuzoZaMalo.Model
         /// <para>Zmiana wartości zmiennej na <see cref="Gra.Status.Poddana"/> po uruchomieniu metody <see cref="Przerwij"/>.</para>
         /// <para>Zmiana wartości zmiennej na <see cref="Gra.Status.Zakonczona"/> w metodzie <see cref="Propozycja(int)"/>, po podaniu poprawnej, odgadywanej liczby.</para>
         /// </remarks>
+        [DataMember]
         public Status StatusGry { get; private set; }
-
-
+        [DataMember]
         private List<Ruch> listaRuchow;
-
         public IReadOnlyList<Ruch> ListaRuchow { get { return listaRuchow.AsReadOnly(); } }
 
         /// <summary>
         /// Czas rozpoczęcia gry, ustawiany w momencie utworzenia obiektu gry, w konstruktorze. Nie można go już zmodyfikować podczas życia obiektu.
         /// </summary>
-        public DateTime CzasRozpoczecia { get; }
+        [DataMember]
+        public DateTime CzasRozpoczecia { get; private set; } // musiałem dodać setter, gdyż pole nie może być readonly przy serializacji
         public DateTime? CzasZakonczenia { get; private set; }
 
         /// <summary>
@@ -107,9 +110,8 @@ namespace GraZaDuzoZaMalo.Model
         public TimeSpan AktualnyCzasGry => DateTime.Now - CzasRozpoczecia;
         public TimeSpan CalkowityCzasGry => (StatusGry == Status.WTrakcie) ? AktualnyCzasGry : (TimeSpan)(CzasZakonczenia - CzasRozpoczecia);
 
-        public Gra(int min, int max)
-        {
-            if (min >= max)
+        public Gra(int min, int max) {
+            if(min >= max)
                 throw new ArgumentException();
 
             MinLiczbaDoOdgadniecia = min;
@@ -131,68 +133,80 @@ namespace GraZaDuzoZaMalo.Model
         /// </summary>
         /// <param name="pytanie"></param>
         /// <returns></returns>
-        public Odpowiedz Ocena(int pytanie)
-        {
+        public Odpowiedz Ocena(int pytanie) {
             Odpowiedz odp;
-            if (pytanie == liczbaDoOdgadniecia)
-            {
+            if(pytanie == liczbaDoOdgadniecia) {
                 odp = Odpowiedz.Trafiony;
                 StatusGry = Status.Zakonczona;
                 CzasZakonczenia = DateTime.Now;
                 listaRuchow.Add(new Ruch(pytanie, odp, Status.Zakonczona));
-            }
-            else if (pytanie < liczbaDoOdgadniecia)
+            } else if(pytanie < liczbaDoOdgadniecia)
                 odp = Odpowiedz.ZaMalo;
             else
                 odp = Odpowiedz.ZaDuzo;
 
             //dopisz do listy
-            if (StatusGry == Status.WTrakcie)
-            {
+            if(StatusGry == Status.WTrakcie) {
                 listaRuchow.Add(new Ruch(pytanie, odp, Status.WTrakcie));
             }
 
             return odp;
         }
 
-        public int Przerwij()
-        {
-            if (StatusGry == Status.WTrakcie)
-            {
+        public void Przerwij() {
+            if(StatusGry == Status.WTrakcie) {
+                StatusGry = Status.Zawieszona;
+                CzasZakonczenia = DateTime.Now;
+                listaRuchow.Add(new Ruch(null, null, Status.Zawieszona));
+            }
+        }
+
+        public void Wznow() {
+            if(StatusGry == Status.Zawieszona) {
+                StatusGry = Status.WTrakcie;
+            }
+        }
+
+        public int Poddaj() {
+            if(StatusGry == Status.WTrakcie) {
                 StatusGry = Status.Poddana;
                 CzasZakonczenia = DateTime.Now;
-                listaRuchow.Add(new Ruch(null, null, Status.WTrakcie));
+                listaRuchow.Add(new Ruch(null, null, Status.Poddana));
             }
-
             return liczbaDoOdgadniecia;
         }
 
-
         // struktury wewnętrzne, pomocnicze
-        public enum Odpowiedz
-        {
+        [DataContract]
+        public enum Odpowiedz {
+            [EnumMember]
             ZaMalo = -1,
+            [EnumMember]
             Trafiony = 0,
+            [EnumMember]
             ZaDuzo = 1
         };
 
-        public class Ruch
-        {
-            public int? Liczba { get; }
-            public Odpowiedz? Wynik { get; }
-            public Status StatusGry { get; }
-            public DateTime Czas { get; }
+        [Serializable]
+        [DataContract]
+        public class Ruch {
+            [DataMember]
+            public int? Liczba { get; private set; }
+            [DataMember]
+            public Odpowiedz? Wynik { get; private set; }
+            [DataMember]
+            public Status StatusGry { get; private set; }
+            [DataMember]
+            public DateTime Czas { get; private set; }
 
-            public Ruch(int? propozycja, Odpowiedz? odp, Status statusGry)
-            {
+            public Ruch(int? propozycja, Odpowiedz? odp, Status statusGry) {
                 this.Liczba = propozycja;
                 this.Wynik = odp;
                 this.StatusGry = statusGry;
                 this.Czas = DateTime.Now;
             }
 
-            public override string ToString()
-            {
+            public override string ToString() {
                 return $"({Liczba}, {Wynik}, {Czas}, {StatusGry})";
             }
         }
