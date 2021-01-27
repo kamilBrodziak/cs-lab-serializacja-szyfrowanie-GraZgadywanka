@@ -10,8 +10,6 @@ using static GraZaDuzoZaMalo.Model.Gra.Odpowiedz;
 
 namespace AppGraZaDuzoZaMaloCLI {
     public class KontrolerCLI {
-        
-
         private Gra gra;
         private WidokCLI widok;
 
@@ -26,7 +24,6 @@ namespace AppGraZaDuzoZaMaloCLI {
         public DateTime CzasRozpoczecia => gra.CzasRozpoczecia;
 
         public KontrolerCLI() {
-            gra = new Gra();
             widok = new WidokCLI(this);
         }
 
@@ -36,17 +33,60 @@ namespace AppGraZaDuzoZaMaloCLI {
                 UruchomRozgrywke();
         }
 
-        private void SaveGame() {
+        private void ZapiszGreCo10Sekund() {
             while(gra.StatusGry == Gra.Status.WTrakcie) {
                 //BinarySerialization.SerializeToFile<Gra>(gra);
                 DataContractSerialization.SerializeToFile<Gra>(gra);
-                Thread.Sleep(10000);
+                for(int i = 0; i < 100; i++) {
+                    if(gra.StatusGry != Gra.Status.WTrakcie) break;
+                    Thread.Sleep(100);
+                }
             }
         }
 
         public void UruchomRozgrywke() {
             widok.CzyscEkran();
-            // ustaw zakres do losowania
+            WczytajGre();
+            var t = new Thread(new ThreadStart(ZapiszGreCo10Sekund));
+            t.Start();
+            do {
+                //wczytaj propozycję
+                int propozycja = 0;
+                try {
+                    propozycja = widok.WczytajPropozycje();
+                    widok.CzyscEkran();
+                } catch(ZawieszenieGryException) {
+                    gra.Przerwij();
+                } catch(KoniecGryException) {
+                    gra.Poddaj();
+                }
+
+                if(gra.StatusGry == Gra.Status.Poddana || gra.StatusGry == Gra.Status.Zawieszona)
+                    break;
+                
+                Console.WriteLine(propozycja);
+                switch(gra.Ocena(propozycja)) {
+                    case ZaDuzo:
+                        widok.KomunikatZaDuzo();
+                        break;
+                    case ZaMalo:
+                        widok.KomunikatZaMalo();
+                        break;
+                    case Trafiony:
+                        widok.KomunikatTrafiono();
+                        break;
+                    default:
+                        break;
+                }
+                widok.HistoriaGry();
+            }
+            while(gra.StatusGry == Gra.Status.WTrakcie);
+            t.Join();
+            ZakonczGre();
+        }
+
+        public int LiczbaProb() => gra.ListaRuchow.Count();
+        private void WczytajGre() {
             bool newGame = true;
             //if(BinarySerialization.SaveExists()) {
             if(DataContractSerialization.SaveExists()) {
@@ -65,74 +105,27 @@ namespace AppGraZaDuzoZaMaloCLI {
                 }
             }
             if(newGame) {
-                gra = new Gra(MinZakres, MaxZakres); //może zgłosić ArgumentException
+                gra = new Gra(MinZakres, MaxZakres);
             }
-            var t = new Thread(new ThreadStart(SaveGame));
-            t.Start();
-
-            do {
-                //wczytaj propozycję
-                int propozycja = 0;
-                try {
-                    propozycja = widok.WczytajPropozycje();
-                    widok.CzyscEkran();
-                } catch(ZawieszenieGryException) {
-                    try {
-                        gra.Przerwij();
-                        //BinarySerialization.SerializeToFile<Gra>(gra);
-                        DataContractSerialization.SerializeToFile<Gra>(gra);
-                    } catch(SaveException e) {
-                        gra.Poddaj();
-                        Console.WriteLine(e.Message);
-                    }
-                } catch(KoniecGryException) {
-                    gra.Poddaj();
-                }
-
-                if(gra.StatusGry == Gra.Status.Poddana || gra.StatusGry == Gra.Status.Zawieszona)
-                    break;
-                
-                Console.WriteLine(propozycja);
-
-                //Console.WriteLine( gra.Ocena(propozycja) );
-                //oceń propozycję, break
-                switch(gra.Ocena(propozycja)) {
-                    case ZaDuzo:
-                        widok.KomunikatZaDuzo();
-                        break;
-                    case ZaMalo:
-                        widok.KomunikatZaMalo();
-                        break;
-                    case Trafiony:
-                        widok.KomunikatTrafiono();
-                        break;
-                    default:
-                        break;
-                }
-                widok.HistoriaGry();
-            }
-            while(gra.StatusGry == Gra.Status.WTrakcie);
-            t.Join();
-            //if StatusGry == Przerwana wypisz poprawną odpowiedź
-            //if StatusGry == Zakończona wypisz statystyki gry
         }
-
-        ///////////////////////
-
-        public void UstawZakresDoLosowania(ref int min, ref int max) {
-
-        }
-
-        public int LiczbaProb() => gra.ListaRuchow.Count();
 
         public void ZakonczGre() {
-            //np. zapisuje stan gry na dysku w celu późniejszego załadowania
-            //albo dopisuje wynik do Top Score
-            //sprząta pamięć
+            try {
+                //BinarySerialization.SerializeToFile<Gra>(gra);
+                DataContractSerialization.SerializeToFile<Gra>(gra);
+            } catch(SaveException e) {
+                gra.Poddaj();
+                Console.WriteLine(e.Message);
+            }
+            if(gra.StatusGry == Gra.Status.Poddana) {
+                widok.Wypisz($"Poprawna odpowiedź to: {gra.LiczbaDoOdgadniecia}");
+            }
+            if(gra.StatusGry == Gra.Status.Poddana || gra.StatusGry == Gra.Status.Zakonczona) {
+                // BinarySerialization.DeleteSave();
+                widok.Wypisz($"Liczba prób: {LiczbaProb()}");
+                DataContractSerialization.DeleteSave();
+            }
             gra = null;
-            widok.CzyscEkran(); //komunikat o końcu gry
-            widok = null;
-            System.Environment.Exit(0);
         }
 
         public void ZakonczRozgrywke() {

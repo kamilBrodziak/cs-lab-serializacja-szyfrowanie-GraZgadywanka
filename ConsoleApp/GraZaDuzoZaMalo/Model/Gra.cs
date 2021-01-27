@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Runtime.Serialization;
+using System.Security.Cryptography;
 
 namespace GraZaDuzoZaMalo.Model {
     /// <summary>
@@ -60,10 +62,13 @@ namespace GraZaDuzoZaMalo.Model {
         /// Domyślna wartość wynosi 1. Wartość jest ustawiana w konstruktorze i nie może zmienić się podczas życia obiektu gry.
         /// </value>
         public int MinLiczbaDoOdgadniecia { get; } = 1;
-
-        [DataMember]
-        readonly private int liczbaDoOdgadniecia;
-
+        [DataMember(Order = 14)]
+        private byte[] liczbaDoOdgadniecia;
+        [DataMember(Order = 15)]
+        readonly private byte[] key;
+        [DataMember (Order = 16)]
+        readonly private byte[] IV;
+        public int LiczbaDoOdgadniecia { get => DecryptNumber(liczbaDoOdgadniecia, key, IV); set { liczbaDoOdgadniecia = EncryptNumber(value, key, IV); } }
 
         /// <summary>
         /// Typ wyliczeniowy opisujący możliwe statusy gry.
@@ -116,13 +121,51 @@ namespace GraZaDuzoZaMalo.Model {
 
             MinLiczbaDoOdgadniecia = min;
             MaxLiczbaDoOdgadniecia = max;
-
-            liczbaDoOdgadniecia = (new Random()).Next(MinLiczbaDoOdgadniecia, MaxLiczbaDoOdgadniecia + 1);
+            using (Aes aes = Aes.Create()) {
+                key = aes.Key;
+                IV = aes.IV;
+                LiczbaDoOdgadniecia = (new Random()).Next(MinLiczbaDoOdgadniecia, MaxLiczbaDoOdgadniecia + 1);
+            }
             CzasRozpoczecia = DateTime.Now;
             CzasZakonczenia = null;
             StatusGry = Status.WTrakcie;
 
             listaRuchow = new List<Ruch>();
+        }
+
+        static byte[] EncryptNumber(int num, byte[] Key, byte[] IV) {
+            byte[] encrypted;
+            using(Aes aes = Aes.Create()) {
+                aes.Key = Key;
+                aes.IV = IV;
+                ICryptoTransform encryptor = aes.CreateEncryptor(aes.Key, aes.IV);
+                using(MemoryStream msEncrypt = new MemoryStream()) {
+                    using(CryptoStream csEncrypt = new CryptoStream(msEncrypt, encryptor, CryptoStreamMode.Write)) {
+                        using(StreamWriter swEncrypt = new StreamWriter(csEncrypt)) {
+                            swEncrypt.Write(num);
+                        }
+                        encrypted = msEncrypt.ToArray();
+                    }
+                }
+            }
+            return encrypted;
+        }
+
+        static int DecryptNumber(byte[] bytes, byte[] Key, byte[] IV) {
+            int plaintext;
+            using(Aes aesAlg = Aes.Create()) {
+                aesAlg.Key = Key;
+                aesAlg.IV = IV;
+                ICryptoTransform decryptor = aesAlg.CreateDecryptor(aesAlg.Key, aesAlg.IV);
+                using(MemoryStream msDecrypt = new MemoryStream(bytes)) {
+                    using(CryptoStream csDecrypt = new CryptoStream(msDecrypt, decryptor, CryptoStreamMode.Read)) {
+                        using(StreamReader srDecrypt = new StreamReader(csDecrypt)) {
+                            plaintext = int.Parse(srDecrypt.ReadToEnd());
+                        }
+                    }
+                }
+            }
+            return plaintext;
         }
 
         public Gra() : this(1, 100) { }
@@ -135,12 +178,12 @@ namespace GraZaDuzoZaMalo.Model {
         /// <returns></returns>
         public Odpowiedz Ocena(int pytanie) {
             Odpowiedz odp;
-            if(pytanie == liczbaDoOdgadniecia) {
+            if(pytanie == LiczbaDoOdgadniecia) {
                 odp = Odpowiedz.Trafiony;
                 StatusGry = Status.Zakonczona;
                 CzasZakonczenia = DateTime.Now;
                 listaRuchow.Add(new Ruch(pytanie, odp, Status.Zakonczona));
-            } else if(pytanie < liczbaDoOdgadniecia)
+            } else if(pytanie < LiczbaDoOdgadniecia)
                 odp = Odpowiedz.ZaMalo;
             else
                 odp = Odpowiedz.ZaDuzo;
@@ -173,7 +216,7 @@ namespace GraZaDuzoZaMalo.Model {
                 CzasZakonczenia = DateTime.Now;
                 listaRuchow.Add(new Ruch(null, null, Status.Poddana));
             }
-            return liczbaDoOdgadniecia;
+            return LiczbaDoOdgadniecia;
         }
 
         // struktury wewnętrzne, pomocnicze
