@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.Serialization;
+using System.Threading;
 using static GraZaDuzoZaMalo.Model.Gra.Odpowiedz;
 
 namespace AppGraZaDuzoZaMaloCLI {
@@ -35,6 +36,14 @@ namespace AppGraZaDuzoZaMaloCLI {
                 UruchomRozgrywke();
         }
 
+        private void SaveGame() {
+            while(gra.StatusGry == Gra.Status.WTrakcie) {
+                //BinarySerialization.SerializeToFile<Gra>(gra);
+                DataContractSerialization.SerializeToFile<Gra>(gra);
+                Thread.Sleep(10000);
+            }
+        }
+
         public void UruchomRozgrywke() {
             widok.CzyscEkran();
             // ustaw zakres do losowania
@@ -58,6 +67,9 @@ namespace AppGraZaDuzoZaMaloCLI {
             if(newGame) {
                 gra = new Gra(MinZakres, MaxZakres); //może zgłosić ArgumentException
             }
+            var t = new Thread(new ThreadStart(SaveGame));
+            t.Start();
+
             do {
                 //wczytaj propozycję
                 int propozycja = 0;
@@ -100,7 +112,7 @@ namespace AppGraZaDuzoZaMaloCLI {
                 widok.HistoriaGry();
             }
             while(gra.StatusGry == Gra.Status.WTrakcie);
-
+            t.Join();
             //if StatusGry == Przerwana wypisz poprawną odpowiedź
             //if StatusGry == Zakończona wypisz statystyki gry
         }
